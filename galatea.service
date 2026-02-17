@@ -1,0 +1,41 @@
+[Unit]
+Description=Galatea Telegram Document Assistant Bot
+Documentation=https://github.com/yourusername/galatea
+After=network.target
+
+[Service]
+# User to run as (create dedicated user for security)
+User=galatea
+Group=galatea
+
+# Working directory
+WorkingDirectory=/opt/galatea
+
+# Start command
+ExecStart=/opt/galatea/venv/bin/python main.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Resource limits (adjust based on your VM)
+MemoryMax=512M
+CPUQuota=50%
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/galatea/data
+
+# Logging (output to journald)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=galatea
+
+[Install]
+WantedBy=multi-user.target
