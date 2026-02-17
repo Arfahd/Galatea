@@ -1,4 +1,4 @@
-# Galatea Cloud
+# Galatea
 
 A Telegram bot that helps users create and edit documents through natural conversation.
 
