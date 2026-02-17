@@ -1,6 +1,5 @@
 [Unit]
 Description=Galatea Telegram Document Assistant Bot
-Documentation=https://github.com/yourusername/galatea
 After=network.target
 
 [Service]
