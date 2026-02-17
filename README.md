@@ -101,6 +101,6 @@ Galatea/
 └── data/
 ```
 
-## Open Source
+## License
 
-Vibe coded with Claude.
+This project is open source.
