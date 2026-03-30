@@ -65,8 +65,8 @@ A Telegram bot that helps users create and edit documents through natural conver
 
 2. Install dependencies
    ```bash
-   python3.11 -m venv venv
-   source venv/bin/activate
+   python -m venv venv
+   source venv/bin/activate or venv\Scripts\activate
    pip install -r requirements.txt
    ```
 
