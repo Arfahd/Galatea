@@ -1,0 +1,30 @@
+# Telegram Bot
+python-telegram-bot==22.6
+
+# AI Service
+anthropic>=0.50.0
+
+# Document Processing
+python-docx==1.1.0
+pypdf>=4.0.0
+pdfplumber>=0.11.0
+reportlab==4.2.0
+openpyxl==3.1.2
+python-pptx==0.6.23
+mistune>=3.0.0
+
+# OCR Support (optional - requires Tesseract system package)
+pytesseract>=0.3.10
+pdf2image>=1.17.0
+
+# Async File I/O
+aiofiles==24.1.0
+
+# Async SQLite Database (Cloud Version)
+aiosqlite>=0.19.0
+
+# System Monitoring (for /health command)
+psutil>=5.9.0
+
+# Environment Variables
+python-dotenv==1.0.1
