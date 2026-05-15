@@ -18,7 +18,7 @@ class Config:
 
     # API Keys
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
     # Admin users (can manage VIPs and ban users, automatically VIP)
     ADMIN_USERS: list[int] = [
@@ -53,10 +53,9 @@ class Config:
     # Activity log retention
     ACTIVITY_RETENTION_DAYS: int = int(os.getenv("ACTIVITY_RETENTION_DAYS", "30"))
 
-    # Claude settings
-    CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
-    CLAUDE_MODEL_HAIKU: str = "claude-3-5-haiku-20241022"
-    CLAUDE_MAX_TOKENS: int = 4096
+    # Gemini settings
+    GEMINI_MODEL: str = "gemini-flash-latest"
+    GEMINI_MODEL_FLASH: str = "gemini-flash-latest"
 
     # Supported file types
     SUPPORTED_EXTENSIONS: set[str] = {".pdf", ".docx", ".doc", ".txt", ".xlsx", ".pptx"}
@@ -102,8 +101,8 @@ class Config:
         if not cls.TELEGRAM_BOT_TOKEN:
             errors.append("TELEGRAM_BOT_TOKEN is required")
 
-        if not cls.ANTHROPIC_API_KEY:
-            errors.append("ANTHROPIC_API_KEY is required")
+        if not cls.GEMINI_API_KEY:
+            errors.append("GEMINI_API_KEY is required")
 
         return errors
 

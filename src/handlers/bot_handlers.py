@@ -18,8 +18,7 @@ from telegram.ext import (
 
 from ..config import config
 from ..database import get_db
-from ..services import ClaudeService, FileService
-from ..services.claude_service import ClaudeServiceError
+from ..services import FileService, GeminiService, GeminiServiceError
 from ..services.file_service import FileServiceError
 from ..services.analysis_service import AnalysisService
 from ..utils.session_manager import UserState, session_manager
@@ -35,17 +34,18 @@ import activity_logger
 logger = logging.getLogger(__name__)
 
 # Services will be initialized lazily
-_claude_service = None
+_ai_service = None
 _file_service = None
 _analysis_service = None
 
 
-def get_claude_service():
-    """Get or create Claude service instance."""
-    global _claude_service
-    if _claude_service is None:
-        _claude_service = ClaudeService()
-    return _claude_service
+def get_ai_service():
+    """Get or create Gemini AI service instance."""
+    global _ai_service
+    if _ai_service is None:
+        _ai_service = GeminiService()
+        logger.info("Initialized Gemini AI Service")
+    return _ai_service
 
 
 def get_file_service():
@@ -60,7 +60,7 @@ def get_analysis_service():
     """Get or create analysis service instance."""
     global _analysis_service
     if _analysis_service is None:
-        _analysis_service = AnalysisService(get_claude_service())
+        _analysis_service = AnalysisService(get_ai_service())
     return _analysis_service
 
 
@@ -1272,6 +1272,7 @@ async def handle_filename_input(
             filename=filename,
             user_id=user_id,
             file_format=file_format,
+            original_file_path=session.current_file_path,
         )
 
         # Send the file
@@ -1336,7 +1337,7 @@ async def process_instruction(
     try:
         session.add_to_history("user", instruction)
 
-        response = await get_claude_service().process_file_request(
+        response = await get_ai_service().process_file_request(
             user_message=instruction,
             file_content=session.current_file_content,
             file_name=session.current_file_name,
@@ -1346,7 +1347,8 @@ async def process_instruction(
         session.add_to_history("assistant", response)
 
         # Check for document content
-        document_content = get_claude_service().extract_document_content(response)
+        document_content = get_ai_service().extract_document_content(response)
+
 
         # Log completion
         await activity_logger.log_complete(user_id, update.effective_user.username)
@@ -1377,10 +1379,10 @@ async def process_instruction(
                 ),
             )
 
-    except ClaudeServiceError as e:
+    except GeminiServiceError as e:
         session.state = UserState.CHATTING
         await activity_logger.log_error(
-            user_id, update.effective_user.username, "Claude API error"
+            user_id, update.effective_user.username, f"Gemini API error: {e}"
         )
         await status_msg.edit_text(
             get_message("error_ai", "en"),
@@ -1422,7 +1424,7 @@ async def process_chat_message(
         session.add_to_history("user", message)
 
         # Use chat mode for conversational response
-        response = await get_claude_service().chat(
+        response = await get_ai_service().chat(
             user_message=message,
             language=lang,
             file_content=session.current_file_content,
@@ -1437,7 +1439,7 @@ async def process_chat_message(
         await activity_logger.log_complete(user_id, update.effective_user.username)
 
         # Check if AI generated document content
-        document_content = get_claude_service().extract_document_content(response)
+        document_content = get_ai_service().extract_document_content(response)
 
         if document_content:
             # AI created/modified document
@@ -1507,10 +1509,10 @@ async def process_chat_message(
                     display_text, reply_markup=keyboards.get_main_menu(lang)
                 )
 
-    except ClaudeServiceError as e:
-        logger.error(f"Claude service error: {e}")
+    except GeminiServiceError as e:
+        logger.error(f"AI service error: {e}")
         await activity_logger.log_error(
-            user_id, update.effective_user.username, "Claude API error"
+            user_id, update.effective_user.username, f"AI API error: {e}"
         )
         await status_msg.edit_text(
             get_message("error_ai", "en"), reply_markup=keyboards.get_main_menu(lang)

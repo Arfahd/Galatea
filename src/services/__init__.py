@@ -1,12 +1,12 @@
 """Services package."""
 
-from .claude_service import ClaudeService, ClaudeServiceError
+from .gemini_service import GeminiService, GeminiServiceError
 from .file_service import FileService, FileServiceError
 from .analysis_service import AnalysisService, AnalysisServiceError
 
 __all__ = [
-    "ClaudeService",
-    "ClaudeServiceError",
+    "GeminiService",
+    "GeminiServiceError",
     "FileService",
     "FileServiceError",
     "AnalysisService",

@@ -1,6 +1,6 @@
 """
 Document analysis service for generating todos and recommendations.
-Uses Claude AI to analyze documents and provide actionable suggestions.
+Uses Gemini AI to analyze documents and provide actionable suggestions.
 """
 
 import logging
@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 class AnalysisService:
     """Service for analyzing documents and generating todos/suggestions."""
 
-    def __init__(self, claude_service):
+    def __init__(self, ai_service):
         """
         Initialize analysis service.
 
         Args:
-            claude_service: Instance of ClaudeService for AI processing
+            ai_service: Instance of AI service (ClaudeService or GeminiService)
         """
-        self.claude_service = claude_service
+        self.ai_service = ai_service
         self.max_todos = config.MAX_TODOS
 
     async def analyze_document(
@@ -53,7 +53,7 @@ class AnalysisService:
             )
 
             # Get AI analysis
-            response = await self.claude_service.analyze_for_todos(
+            response = await self.ai_service.analyze_for_todos(
                 prompt=prompt,
                 max_todos=self.max_todos,
             )
@@ -228,14 +228,14 @@ Apply the change and return the complete modified content.
 Only return the modified content, no explanations.
 Wrap the content with [DOCUMENT_START] and [DOCUMENT_END] markers."""
 
-            response = await self.claude_service.process_file_request(
+            response = await self.ai_service.process_file_request(
                 user_message=prompt,
                 file_content=None,  # Already included in prompt
                 file_name=None,
             )
 
             # Extract content from response
-            modified_content = self.claude_service.extract_document_content(response)
+            modified_content = self.ai_service.extract_document_content(response)
 
             if modified_content:
                 return modified_content
@@ -291,14 +291,14 @@ Apply all changes and return the complete modified content.
 Only return the modified content, no explanations.
 Wrap the content with [DOCUMENT_START] and [DOCUMENT_END] markers."""
 
-            response = await self.claude_service.process_file_request(
+            response = await self.ai_service.process_file_request(
                 user_message=prompt,
                 file_content=None,
                 file_name=None,
             )
 
             # Extract content from response
-            modified_content = self.claude_service.extract_document_content(response)
+            modified_content = self.ai_service.extract_document_content(response)
 
             if modified_content:
                 # Mark all as executed

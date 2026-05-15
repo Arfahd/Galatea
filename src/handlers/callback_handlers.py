@@ -9,7 +9,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..services import ClaudeService, FileService
+from ..services import FileService, GeminiService, GeminiServiceError
 from ..services.analysis_service import AnalysisService
 from ..utils.session_manager import UserState, session_manager
 from ..utils.i18n import get_message
@@ -25,17 +25,18 @@ import activity_logger
 logger = logging.getLogger(__name__)
 
 # Services will be initialized lazily
-_claude_service = None
+_ai_service = None
 _file_service = None
 _analysis_service = None
 
 
-def get_claude_service():
-    """Get or create Claude service instance."""
-    global _claude_service
-    if _claude_service is None:
-        _claude_service = ClaudeService()
-    return _claude_service
+def get_ai_service():
+    """Get or create Gemini AI service instance."""
+    global _ai_service
+    if _ai_service is None:
+        _ai_service = GeminiService()
+        logger.info("Initialized Gemini AI Service")
+    return _ai_service
 
 
 def get_file_service():
@@ -50,7 +51,7 @@ def get_analysis_service():
     """Get or create analysis service instance."""
     global _analysis_service
     if _analysis_service is None:
-        _analysis_service = AnalysisService(get_claude_service())
+        _analysis_service = AnalysisService(get_ai_service())
     return _analysis_service
 
 
@@ -504,7 +505,7 @@ async def handle_edit_callback(query, session, context) -> None:
             operation, f"Apply {operation} to this document."
         )
 
-        response = await get_claude_service().edit_document(
+        response = await get_ai_service().edit_document(
             instruction=prompt,
             content=session.current_file_content,
             file_type=session.current_file_type or "txt",
@@ -513,7 +514,7 @@ async def handle_edit_callback(query, session, context) -> None:
         )
 
         # Extract new content
-        new_content = get_claude_service().extract_document_content(response)
+        new_content = get_ai_service().extract_document_content(response)
 
         if new_content:
             session.current_file_content = new_content
@@ -535,6 +536,7 @@ async def handle_edit_callback(query, session, context) -> None:
                     filename=session.current_file_path.stem,
                     user_id=query.from_user.id,
                     file_format=session.current_file_type or "txt",
+                    original_file_path=session.current_file_path,
                 )
 
             # Use operation-specific feedback message
@@ -827,13 +829,14 @@ async def handle_translate_callback(query, session, context) -> None:
     await query.edit_message_text(get_message("processing", lang))
 
     try:
-        response = await get_claude_service().translate_document(
-            content=session.current_file_content or "",
+        response = await get_ai_service().translate_document(
+            content=session.current_file_content,
             target_language=target_lang,
-            file_type=session.current_file_type or "txt",
+            file_type=session.current_file_type
         )
 
-        new_content = get_claude_service().extract_document_content(response)
+        # Extract content
+        new_content = get_ai_service().extract_document_content(response)
 
         if new_content:
             # Cache the translation before updating content
@@ -931,6 +934,7 @@ async def handle_done_callback(query, session, context) -> None:
                 filename=session.current_file_name or "document",
                 user_id=user_id,
                 file_format=session.current_file_type or "txt",
+                original_file_path=session.current_file_path,
             )
 
             # Send file (using context manager to properly close file handle)

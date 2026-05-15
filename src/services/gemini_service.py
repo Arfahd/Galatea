@@ -1,42 +1,43 @@
 """
-Claude AI integration service for conversational document processing.
-Enhanced for natural conversation and multi-format document support.
+Gemini AI integration service for conversational document processing.
+Uses Google's Generative AI to provide document assistance.
 """
 
 import logging
+import json
 from typing import Optional
-from anthropic import AsyncAnthropic, APIError
+import google.generativeai as genai
+from google.generativeai.types import GenerationConfig
 
 from ..config import config
 
 logger = logging.getLogger(__name__)
 
 
-class ClaudeService:
-    """Service for interacting with Claude AI API."""
+class GeminiService:
+    """Service for interacting with Google Gemini AI API."""
 
-    # Operations that can use the cheaper Haiku model
-    HAIKU_OPERATIONS = {"summarize", "grammar", "format", "translate"}
+    # Operations that can use the cheaper Flash model
+    FLASH_OPERATIONS = {"summarize", "grammar", "format", "translate"}
 
     def __init__(self):
-        self.client = AsyncAnthropic(
-            api_key=config.ANTHROPIC_API_KEY,
-            timeout=60.0,  # 60 second timeout for API calls
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        self.model_name = config.GEMINI_MODEL
+        self.model_name_flash = config.GEMINI_MODEL_FLASH
+        
+        # Generation configuration
+        self.generation_config = GenerationConfig(
+            temperature=0.7,
+            top_p=0.95,
+            top_k=40,
+            max_output_tokens=8192, # Increased for larger documents
         )
-        self.model = config.CLAUDE_MODEL
-        self.model_haiku = config.CLAUDE_MODEL_HAIKU
-        self.max_tokens = config.CLAUDE_MAX_TOKENS
 
-    def _get_model_for_operation(self, operation: str) -> str:
-        """
-        Select model based on operation type.
-
-        Simple operations (summarize, grammar, format, translate) use Haiku (cheaper).
-        Complex operations (rewrite, create, analyze, chat) use Sonnet (smarter).
-        """
-        if operation in self.HAIKU_OPERATIONS:
-            return self.model_haiku
-        return self.model
+    def _get_model_name_for_operation(self, operation: str) -> str:
+        """Select model based on operation type."""
+        if operation in self.FLASH_OPERATIONS:
+            return self.model_name_flash
+        return self.model_name
 
     async def chat(
         self,
@@ -47,41 +48,29 @@ class ClaudeService:
         file_type: Optional[str] = None,
         conversation_history: Optional[list[dict]] = None,
     ) -> str:
-        """
-        Have a conversational response about documents.
-
-        Args:
-            user_message: User's message
-            language: User's preferred language
-            file_content: Current document content if any
-            file_name: Current filename if any
-            file_type: Current file type if any
-            conversation_history: Previous conversation
-
-        Returns:
-            AI response text
-        """
+        """Have a conversational response about documents."""
         system_prompt = self._build_conversational_prompt(language, file_type)
-        messages = self._build_messages(
-            user_message, file_content, file_name, conversation_history
+        
+        model = genai.GenerativeModel(
+            model_name=self.model_name,
+            system_instruction=system_prompt,
+        )
+
+        chat_session = model.start_chat(
+            history=self._format_history(conversation_history)
         )
 
         try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=system_prompt,
-                messages=messages,
+            prompt = self._build_prompt(user_message, file_content, file_name)
+            response = await chat_session.send_message_async(
+                prompt,
+                generation_config=self.generation_config
             )
+            return response.text
 
-            return response.content[0].text
-
-        except APIError as e:
-            logger.error(f"Claude API error: {e}")
-            raise ClaudeServiceError(f"API error: {e.message}")
         except Exception as e:
-            logger.error(f"Unexpected error calling Claude: {e}")
-            raise ClaudeServiceError(f"Unexpected error: {str(e)}")
+            logger.error(f"Gemini API error: {e}")
+            raise GeminiServiceError(f"API error: {str(e)}")
 
     async def process_file_request(
         self,
@@ -91,58 +80,36 @@ class ClaudeService:
         conversation_history: Optional[list[dict]] = None,
         use_model: Optional[str] = None,
     ) -> str:
-        """
-        Process a user request related to file operations.
-
-        Args:
-            user_message: The user's message/instruction
-            file_content: Content of the file being worked on (if any)
-            file_name: Name of the file (if any)
-            conversation_history: Previous messages in the conversation
-            use_model: Specific model to use (defaults to Sonnet)
-
-        Returns:
-            Claude's response text
-        """
+        """Process a user request related to file operations."""
         system_prompt = self._build_system_prompt()
-        messages = self._build_messages(
-            user_message, file_content, file_name, conversation_history
+        
+        model = genai.GenerativeModel(
+            model_name=use_model or self.model_name,
+            system_instruction=system_prompt,
         )
 
-        model = use_model or self.model
+        chat_session = model.start_chat(
+            history=self._format_history(conversation_history)
+        )
 
         try:
-            response = await self.client.messages.create(
-                model=model,
-                max_tokens=self.max_tokens,
-                system=system_prompt,
-                messages=messages,
+            prompt = self._build_prompt(user_message, file_content, file_name)
+            response = await chat_session.send_message_async(
+                prompt,
+                generation_config=self.generation_config
             )
+            return response.text
 
-            return response.content[0].text
-
-        except APIError as e:
-            logger.error(f"Claude API error: {e}")
-            raise ClaudeServiceError(f"API error: {e.message}")
         except Exception as e:
-            logger.error(f"Unexpected error calling Claude: {e}")
-            raise ClaudeServiceError(f"Unexpected error: {str(e)}")
+            logger.error(f"Gemini API error: {e}")
+            raise GeminiServiceError(f"API error: {str(e)}")
 
     async def analyze_for_todos(
         self,
         prompt: str,
         max_todos: int = 5,
     ) -> str:
-        """
-        Analyze document and generate todo suggestions.
-
-        Args:
-            prompt: Analysis prompt with document content
-            max_todos: Maximum number of todos to generate
-
-        Returns:
-            JSON response with todos
-        """
+        """Analyze document and generate todo suggestions."""
         system_prompt = f"""You are a document analysis assistant. 
 Your task is to analyze documents and provide specific, actionable improvement suggestions.
 
@@ -168,22 +135,23 @@ Response format must be valid JSON with this structure:
     ]
 }}"""
 
+        model = genai.GenerativeModel(
+            model_name=self.model_name,
+            system_instruction=system_prompt,
+        )
+
         try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": prompt}],
+            response = await model.generate_content_async(
+                prompt,
+                generation_config=GenerationConfig(
+                    response_mime_type="application/json",
+                )
             )
+            return response.text
 
-            return response.content[0].text
-
-        except APIError as e:
-            logger.error(f"Claude API error during analysis: {e}")
-            raise ClaudeServiceError(f"API error: {e.message}")
         except Exception as e:
-            logger.error(f"Unexpected error during analysis: {e}")
-            raise ClaudeServiceError(f"Unexpected error: {str(e)}")
+            logger.error(f"Gemini API error during analysis: {e}")
+            raise GeminiServiceError(f"API error: {str(e)}")
 
     async def create_document(
         self,
@@ -192,18 +160,7 @@ Response format must be valid JSON with this structure:
         language: str = "en",
         template_content: Optional[str] = None,
     ) -> str:
-        """
-        Create document content based on user description.
-
-        Args:
-            description: User's description of what they want
-            file_type: Target document type
-            language: User's language preference
-            template_content: Optional template to build upon
-
-        Returns:
-            Generated document content
-        """
+        """Create document content based on user description."""
         type_instructions = {
             "docx": "Create a well-structured Word document with clear paragraphs and headings where appropriate.",
             "pdf": "Create content suitable for a PDF document with clear structure.",
@@ -213,6 +170,7 @@ Response format must be valid JSON with this structure:
         }
 
         instruction = type_instructions.get(file_type, "Create well-organized content.")
+        template_str = f"Starting template:\n{template_content}" if template_content else ""
 
         prompt = f"""Create a {file_type.upper()} document based on this request:
 
@@ -220,29 +178,28 @@ Request: {description}
 
 {instruction}
 
-{"Starting template:\n" + template_content if template_content else ""}
+{template_str}
 
 Language preference: {"Indonesian" if language == "id" else "English"}
 
 Wrap your document content with [DOCUMENT_START] and [DOCUMENT_END] markers.
 Only include the document content itself, no explanations before or after the markers."""
 
+        model = genai.GenerativeModel(
+            model_name=self.model_name,
+            system_instruction=self._build_system_prompt(),
+        )
+
         try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=self._build_system_prompt(),
-                messages=[{"role": "user", "content": prompt}],
+            response = await model.generate_content_async(
+                prompt,
+                generation_config=self.generation_config
             )
+            return response.text
 
-            return response.content[0].text
-
-        except APIError as e:
-            logger.error(f"Claude API error during creation: {e}")
-            raise ClaudeServiceError(f"API error: {e.message}")
         except Exception as e:
-            logger.error(f"Unexpected error during creation: {e}")
-            raise ClaudeServiceError(f"Unexpected error: {str(e)}")
+            logger.error(f"Gemini API error during creation: {e}")
+            raise GeminiServiceError(f"API error: {str(e)}")
 
     async def edit_document(
         self,
@@ -252,19 +209,7 @@ Only include the document content itself, no explanations before or after the ma
         language: str = "en",
         operation: str = "custom",
     ) -> str:
-        """
-        Edit document based on instruction.
-
-        Args:
-            instruction: Edit instruction
-            content: Current document content
-            file_type: Document type
-            language: User's language
-            operation: Operation type for model selection (summarize, grammar, format, rewrite, custom)
-
-        Returns:
-            Response with edited content
-        """
+        """Edit document based on instruction."""
         prompt = f"""Edit this {file_type.upper()} document according to the instruction.
 
 Instruction: {instruction}
@@ -278,9 +223,8 @@ Apply the requested changes and return the complete modified document.
 Wrap the edited content with [DOCUMENT_START] and [DOCUMENT_END] markers.
 {"Respond in Indonesian if appropriate." if language == "id" else ""}"""
 
-        # Select model based on operation type
-        model = self._get_model_for_operation(operation)
-        return await self.process_file_request(prompt, use_model=model)
+        model_name = self._get_model_name_for_operation(operation)
+        return await self.process_file_request(prompt, use_model=model_name)
 
     async def translate_document(
         self,
@@ -288,17 +232,7 @@ Wrap the edited content with [DOCUMENT_START] and [DOCUMENT_END] markers.
         target_language: str,
         file_type: str,
     ) -> str:
-        """
-        Translate document to target language.
-
-        Args:
-            content: Document content
-            target_language: Target language code
-            file_type: Document type
-
-        Returns:
-            Translated content
-        """
+        """Translate document to target language."""
         language_names = {
             "en": "English",
             "id": "Indonesian",
@@ -324,8 +258,7 @@ Translate all text content to {target} while preserving:
 
 Wrap the translated content with [DOCUMENT_START] and [DOCUMENT_END] markers."""
 
-        # Use Haiku for translation (simpler task)
-        return await self.process_file_request(prompt, use_model=self.model_haiku)
+        return await self.process_file_request(prompt, use_model=self.model_name_flash)
 
     async def summarize_document(
         self,
@@ -333,17 +266,7 @@ Wrap the translated content with [DOCUMENT_START] and [DOCUMENT_END] markers."""
         file_type: str,
         language: str = "en",
     ) -> str:
-        """
-        Summarize document content.
-
-        Args:
-            content: Document content
-            file_type: Document type
-            language: Output language
-
-        Returns:
-            Summary response
-        """
+        """Summarize document content."""
         lang_instruction = (
             "Respond in Indonesian." if language == "id" else "Respond in English."
         )
@@ -364,8 +287,7 @@ Provide:
 
 If the user wants this as a new document, wrap it with [DOCUMENT_START] and [DOCUMENT_END] markers."""
 
-        # Use Haiku for summarization (simpler task)
-        return await self.process_file_request(prompt, use_model=self.model_haiku)
+        return await self.process_file_request(prompt, use_model=self.model_name_flash)
 
     def _build_conversational_prompt(
         self, language: str = "en", file_type: Optional[str] = None
@@ -393,6 +315,15 @@ Your capabilities:
 5. Help with formatting and structure
 {file_context}
 
+CRITICAL REQUIREMENT - Structural Markers:
+The document content contains markers like "<<< TABLE_N >>>" or "<<< IMAGE_N >>>".
+- These represent complex elements (tables/images) from the original file.
+- YOU MUST PRESERVE THESE MARKERS EXACTLY in your response.
+- Do not modify, delete, or translate the markers (e.g., keep "<<< TABLE_0 >>>" as is).
+- Place them in the appropriate position in the edited document.
+- If you rewrite a section, ensure the markers that were in that section are still there.
+- The text following a table marker is the current content of that table for your context only.
+
 Guidelines:
 - Be conversational and friendly, but professional
 - Ask clarifying questions when the request is unclear
@@ -415,6 +346,14 @@ Your role is to help users with:
 1. Creating new documents (Word, PDF, Excel, PowerPoint, Text)
 2. Editing existing documents (summarize, rewrite, format, translate, etc.)
 3. Understanding document content
+
+CRITICAL REQUIREMENT - Structural Markers:
+The document content contains markers like "<<< TABLE_N >>>" or "<<< IMAGE_N >>>".
+- These represent complex elements (tables/images) from the original file.
+- YOU MUST PRESERVE THESE MARKERS EXACTLY in your output.
+- Do not modify, delete, or translate the markers.
+- Place them in the appropriate position in the edited document.
+- You can change the text around them, but keep the markers intact.
 
 Document Format Guidelines:
 
@@ -440,30 +379,30 @@ When providing document content that should be saved, wrap it with:
 This allows the system to extract and save the content properly.
 Always provide complete document content, not partial updates."""
 
-    def _build_messages(
+    def _format_history(self, history: Optional[list[dict]]) -> list[dict]:
+        """Format history for Gemini API."""
+        if not history:
+            return []
+        
+        formatted = []
+        for msg in history:
+            role = "user" if msg["role"] == "user" else "model"
+            formatted.append({"role": role, "parts": [msg["content"]]})
+        return formatted
+
+    def _build_prompt(
         self,
         user_message: str,
         file_content: Optional[str],
         file_name: Optional[str],
-        conversation_history: Optional[list[dict]],
-    ) -> list[dict]:
-        """Build the messages array for the API call."""
-        messages = []
-
-        # Add conversation history if present
-        if conversation_history:
-            messages.extend(conversation_history)
-
-        # Build current user message
-        current_message = ""
-
+    ) -> str:
+        """Build the prompt string."""
         if file_content and file_name:
-            # Truncate very long content
             content_preview = file_content
-            if len(file_content) > 6000:
-                content_preview = file_content[:6000] + "\n\n[Content truncated...]"
+            if len(file_content) > 15000: # Increased for Gemini
+                content_preview = file_content[:15000] + "\n\n[Content truncated...]"
 
-            current_message = f"""Working with file: "{file_name}"
+            return f"""Working with file: "{file_name}"
 
 Content:
 ---
@@ -471,23 +410,11 @@ Content:
 ---
 
 User request: {user_message}"""
-        else:
-            current_message = user_message
-
-        messages.append({"role": "user", "content": current_message})
-
-        return messages
+        
+        return user_message
 
     def extract_document_content(self, response: str) -> Optional[str]:
-        """
-        Extract document content from Claude's response if present.
-
-        Args:
-            response: Claude's response text
-
-        Returns:
-            Extracted document content or None
-        """
+        """Extract document content from response if present."""
         start_marker = "[DOCUMENT_START]"
         end_marker = "[DOCUMENT_END]"
 
@@ -505,7 +432,6 @@ User request: {user_message}"""
         return "[DOCUMENT_START]" in response and "[DOCUMENT_END]" in response
 
 
-class ClaudeServiceError(Exception):
-    """Custom exception for Claude service errors."""
-
+class GeminiServiceError(Exception):
+    """Custom exception for Gemini service errors."""
     pass

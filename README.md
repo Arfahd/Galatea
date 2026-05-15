@@ -19,7 +19,7 @@ A Telegram bot that helps users create and edit documents through natural conver
 | Runtime | Python 3.11+ |
 | Database | SQLite |
 | Bot | python-telegram-bot |
-| AI | Claude (Anthropic) |
+| AI | Gemini (Google) |
 | Docs | python-docx, python-pptx, openpyxl, reportlab |
 
 ## Commands

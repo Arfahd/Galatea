@@ -3,7 +3,7 @@
 Galatea - File Assistant Telegram Bot (Cloud Version)
 
 A Telegram bot that helps users read, write, and edit documents
-using Claude AI for intelligent processing.
+using Gemini AI for intelligent processing.
 
 Cloud-optimized version:
 - SQLite database for persistence
@@ -226,10 +226,14 @@ async def main() -> None:
         logger.info(f"Received signal {sig}, initiating graceful shutdown...")
         shutdown_event.set()
 
-    # Register signal handlers
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))
+    # Register signal handlers (Linux/Unix only)
+    try:
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))
+    except (NotImplementedError, AttributeError):
+        # Windows doesn't support add_signal_handler
+        logger.info("Signal handlers not supported on this platform, using default behavior")
 
     logger.info("Bot is ready! Starting polling...")
 
@@ -244,9 +248,14 @@ async def main() -> None:
             timeout=30,
         )
 
-        # Wait for shutdown signal
-        await shutdown_event.wait()
+        # Wait for shutdown signal or KeyboardInterrupt
+        try:
+            await shutdown_event.wait()
+        except asyncio.CancelledError:
+            logger.info("Main task cancelled, shutting down...")
 
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, shutting down...")
     finally:
         # Graceful cleanup sequence
         logger.info("Stopping bot...")
